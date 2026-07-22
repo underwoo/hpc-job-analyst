@@ -310,7 +310,21 @@ def _check_proxy(client: httpx.Client) -> bool:
 # Helper: read and trim the log file
 # ---------------------------------------------------------------------------
 def _read_log(path: Path, tail: bool) -> str:
-    text = path.read_text(errors="replace")
+    try:
+        text = path.read_text(errors="replace")
+    except PermissionError:
+        raise click.ClickException(
+            f"Permission denied: cannot read {path}\n"
+            f"Check that you have read access to this file."
+        )
+    except FileNotFoundError:
+        raise click.ClickException(
+            f"File not found: {path}"
+        )
+    except OSError as exc:
+        raise click.ClickException(
+            f"Cannot read {path}: {exc.strerror}"
+        )
     if len(text) <= _MAX_LOG_CHARS:
         return text
     if tail:
@@ -604,8 +618,17 @@ class _FileFallbackGroup(click.Group):
         # is a path that exists on disk, prepend 'analyze' so the user can
         # write:  analyze-job /path/to/job.oXXX  [options]
         if args and not args[0].startswith("-"):
-            if args[0] not in self.commands and Path(args[0]).exists():
-                args = ["analyze"] + list(args)
+            if args[0] not in self.commands:
+                try:
+                    path_exists = Path(args[0]).exists()
+                except PermissionError:
+                    # Can't stat the path — treat it as a file argument anyway
+                    # so the analyze command can emit a proper error message.
+                    path_exists = True
+                except OSError:
+                    path_exists = False
+                if path_exists:
+                    args = ["analyze"] + list(args)
         return super().parse_args(ctx, args)
 
 
@@ -624,8 +647,7 @@ def cli():
 
 
 @cli.command("analyze")
-@click.argument("logfile", type=click.Path(exists=True, readable=True,
-                                           path_type=Path))
+@click.argument("logfile", type=click.Path(path_type=Path))
 @click.option("--model", "-m", default=_DEFAULT_MODEL, show_default=True,
               help="AI model ID to use for analysis.")
 @click.option("--context", "-c", default=None,
