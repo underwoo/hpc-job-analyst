@@ -19,6 +19,7 @@ import ast as _ast
 import configparser
 import subprocess
 import textwrap
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -30,6 +31,7 @@ from rich.markdown import Markdown
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from analyze_job import __version__
+from analyze_job.telemetry import write_record as _telemetry_write
 
 # ---------------------------------------------------------------------------
 # Configuration file resolution
@@ -92,10 +94,11 @@ def _load_client_config() -> configparser.ConfigParser:
 # Load once at import time; commands read from this object
 _CLIENT_CFG = _load_client_config()
 
-_DEFAULT_SOCKET = _CLIENT_CFG.get("proxy", "socket",  fallback="")
-_DEFAULT_HOST   = _CLIENT_CFG.get("proxy", "host",    fallback="127.0.0.1")
-_DEFAULT_PORT   = int(_CLIENT_CFG.get("proxy", "port", fallback="8742"))
-_DEFAULT_MODEL  = _CLIENT_CFG.get("proxy", "model",   fallback="claude_4_6_sonnet")
+_DEFAULT_SOCKET    = _CLIENT_CFG.get("proxy", "socket",    fallback="")
+_DEFAULT_HOST      = _CLIENT_CFG.get("proxy", "host",      fallback="127.0.0.1")
+_DEFAULT_PORT      = int(_CLIENT_CFG.get("proxy", "port",  fallback="8742"))
+_DEFAULT_MODEL     = _CLIENT_CFG.get("proxy", "model",     fallback="claude_4_6_sonnet")
+_DEFAULT_TELEMETRY = _CLIENT_CFG.getboolean("proxy", "telemetry", fallback=True)
 
 # Maximum characters of log to send (avoids exceeding context limits)
 _MAX_LOG_CHARS = 80_000
@@ -227,6 +230,21 @@ User permissions and recommended actions:
 
 Format your response in Markdown with clear section headers.
 Keep your response focused and actionable — avoid unnecessary background.
+
+At the very end of your response, on its own line, add exactly one
+machine-readable classification tag in this format (choose the single best
+match):
+
+<!-- CLASSIFICATION: infrastructure -->
+<!-- CLASSIFICATION: model -->
+<!-- CLASSIFICATION: success -->
+<!-- CLASSIFICATION: unknown -->
+
+Use "infrastructure" for hardware, network fabric, node, or filesystem failures.
+Use "model" for software/science failures (bad namelist, missing input, model crash).
+Use "success" if the job completed without error.
+Use "unknown" if the failure type cannot be determined from the log.
+Include exactly one such tag.  It is stripped from the displayed output automatically.
 """
 
 
@@ -236,6 +254,28 @@ def _build_system_prompt() -> str:
     if context:
         return _SYSTEM_PROMPT_BASE + "\n" + context + "\n"
     return _SYSTEM_PROMPT_BASE
+
+
+# ---------------------------------------------------------------------------
+# Classification tag extraction
+# ---------------------------------------------------------------------------
+_CLASSIFICATION_RE = re.compile(
+    r'<!--\s*CLASSIFICATION:\s*(infrastructure|model|success|unknown)\s*-->\s*$',
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _extract_classification(text: str) -> tuple:
+    """
+    Find and remove the CLASSIFICATION tag from the AI response.
+    Returns (classification_value_or_None, cleaned_text).
+    """
+    m = _CLASSIFICATION_RE.search(text)
+    if m:
+        value = m.group(1).lower()
+        cleaned = _CLASSIFICATION_RE.sub("", text).rstrip()
+        return value, cleaned
+    return None, text
 
 
 # ---------------------------------------------------------------------------
@@ -477,7 +517,11 @@ def _build_job_metadata(logfile: Path, log_text: str) -> str:
 # Main analysis call
 # ---------------------------------------------------------------------------
 def _analyze(client: httpx.Client, log_text: str, model: str,
-             extra_context: Optional[str]) -> str:
+             extra_context: Optional[str]) -> tuple:
+    """
+    Run the analysis API call.
+    Returns (cleaned_analysis_text, classification_or_None, latency_ms).
+    """
     system_prompt = _build_system_prompt()
     user_content = "Please analyze the following HPC job stdout log and explain why the job failed (or confirm it succeeded).\n\n"
     if extra_context:
@@ -494,12 +538,16 @@ def _analyze(client: httpx.Client, log_text: str, model: str,
         "max_tokens": 2048,
     }
 
+    t0 = time.monotonic()
     response = client.post("/api/v1/chat/completions", json=payload)
     response.raise_for_status()
+    latency_ms = int((time.monotonic() - t0) * 1000)
     data = response.json()
 
     try:
-        return data["choices"][0]["message"]["content"]
+        raw = data["choices"][0]["message"]["content"]
+        classification, cleaned = _extract_classification(raw)
+        return cleaned, classification, latency_ms
     except (KeyError, IndexError) as exc:
         raise click.ClickException(
             f"Unexpected response structure from proxy: {data}"
@@ -507,8 +555,11 @@ def _analyze(client: httpx.Client, log_text: str, model: str,
 
 
 def _generate_ticket(client: httpx.Client, analysis: str,
-                     metadata: str, model: str) -> str:
-    """Given a completed analysis and job metadata, draft a help desk ticket."""
+                     metadata: str, model: str) -> tuple:
+    """
+    Generate the help desk ticket.
+    Returns (ticket_text, latency_ms).
+    """
     system_prompt = _build_system_prompt()
     user_content = (
         f"{metadata}\n\n"
@@ -527,12 +578,14 @@ def _generate_ticket(client: httpx.Client, analysis: str,
         "max_tokens": 1024,
     }
 
+    t0 = time.monotonic()
     response = client.post("/api/v1/chat/completions", json=payload)
     response.raise_for_status()
+    latency_ms = int((time.monotonic() - t0) * 1000)
     data = response.json()
 
     try:
-        return data["choices"][0]["message"]["content"]
+        return data["choices"][0]["message"]["content"], latency_ms
     except (KeyError, IndexError) as exc:
         raise click.ClickException(
             f"Unexpected response structure from proxy: {data}"
@@ -574,7 +627,7 @@ def cli():
 @click.argument("logfile", type=click.Path(exists=True, readable=True,
                                            path_type=Path))
 @click.option("--model", "-m", default=_DEFAULT_MODEL, show_default=True,
-              help="USAi model ID to use for analysis.")
+              help="AI model ID to use for analysis.")
 @click.option("--context", "-c", default=None,
               help="Optional extra context to pass to the model (e.g. 'this node has crashed before').")
 @click.option("--tail/--no-tail", default=True, show_default=True,
@@ -583,21 +636,51 @@ def cli():
               help="Print raw Markdown instead of rendered output.")
 @click.option("--ticket", is_flag=True, default=False,
               help="Also generate a suggested help desk ticket subject and body.")
+@click.option("--no-telemetry", "telemetry_off", is_flag=True, default=False,
+              help="Disable usage telemetry for this invocation.")
 @click.option("--socket", "socket_path", default=_DEFAULT_SOCKET,
               help="Unix socket path (optional; overrides TCP if set and exists).")
 @click.option("--host", default=_DEFAULT_HOST, show_default=True,
               help="Proxy TCP host.")
 @click.option("--port", default=_DEFAULT_PORT, show_default=True,
               help="Proxy TCP port.")
-def analyze_cmd(logfile, model, context, tail, raw, ticket, socket_path, host, port):
+def analyze_cmd(logfile, model, context, tail, raw, ticket, telemetry_off,
+                socket_path, host, port):
     """Analyze a job stdout log file and explain any failures.
 
     LOGFILE is the path to the job stdout file (e.g. myjob.o12345678).
     Pass --ticket to also generate a suggested help desk ticket.
     """
+    use_telemetry = _DEFAULT_TELEMETRY and not telemetry_off
+
+    # Telemetry accumulators — populated as the invocation progresses
+    _t_error:            Optional[str] = None
+    _t_classification:   Optional[str] = None
+    _t_cluster:          str           = "unknown"
+    _t_partition:        str           = "unknown"
+    _t_workflow:         Optional[str] = None
+    _t_latency_analysis: int           = 0
+    _t_latency_ticket:   Optional[int] = None
+    _t_proxy_ok:         bool          = False
+    _t_log_size:         int           = 0
+    _t_log_truncated:    bool          = False
+    _t_ctx_count:        int           = 0
+
     with _make_client(socket_path, host, port) as client:
         if not _check_proxy(client):
             cfg_paths = "\n".join(f"    {p}" for p in _config_search_paths())
+            if use_telemetry:
+                _telemetry_write(
+                    _install_prefix(),
+                    tool_version=__version__, model=model,
+                    workflow_detected=None, cluster="unknown", partition="unknown",
+                    failure_type=None, log_size_chars=0, log_truncated=False,
+                    flags={"ticket": ticket, "raw": raw,
+                           "context_supplied": bool(context)},
+                    context_files_count=0, latency_analysis_ms=0,
+                    latency_ticket_ms=None, proxy_reachable=False,
+                    error="ProxyUnreachable",
+                )
             raise click.ClickException(
                 f"Cannot reach the hpc-job-analyst proxy.\n"
                 f"  Tried TCP: {host}:{port}\n"
@@ -606,8 +689,13 @@ def analyze_cmd(logfile, model, context, tail, raw, ticket, socket_path, host, p
                 f"Check the proxy is running: analyze-job proxy status\n"
             )
 
+        _t_proxy_ok = True
+
         console.print(f"[dim]Reading log file:[/dim] {logfile}")
         log_text = _read_log(logfile, tail)
+        _t_log_size      = len(log_text)
+        _t_log_truncated = len(log_text) >= _MAX_LOG_CHARS
+        _t_workflow      = _detect_workflow(log_text)
         console.print(f"[dim]Log size:[/dim] {len(log_text):,} chars  "
                       f"[dim]Model:[/dim] {model}")
 
@@ -616,15 +704,24 @@ def analyze_cmd(logfile, model, context, tail, raw, ticket, socket_path, host, p
         explicit_ctx = _CLIENT_CFG.get("proxy", "system_context_file", fallback="").strip()
         if explicit_ctx and Path(explicit_ctx).expanduser().exists():
             ctx_paths.append(Path(explicit_ctx).expanduser())
+        _t_ctx_count = len(ctx_paths)
         if ctx_paths:
             console.print("[dim]System context loaded from:[/dim]")
             for p in ctx_paths:
                 console.print(f"[dim]  {p}[/dim]")
 
         # Collect SLURM metadata before the spinner (may invoke subprocesses)
+        metadata: Optional[str] = None
         if ticket:
             console.print("[dim]Collecting job metadata from SLURM...[/dim]")
             metadata = _build_job_metadata(logfile, log_text)
+            # Extract cluster/partition for telemetry from the metadata block
+            _m = re.search(r"Cluster:\s+(\S+)", metadata)
+            if _m and _m.group(1) != "unknown":
+                _t_cluster = _m.group(1)
+            _m = re.search(r"Partition:\s+(\S+)", metadata)
+            if _m and _m.group(1) != "unknown":
+                _t_partition = _m.group(1)
 
         with Progress(
             SpinnerColumn(),
@@ -632,11 +729,32 @@ def analyze_cmd(logfile, model, context, tail, raw, ticket, socket_path, host, p
             console=console,
             transient=True,
         ) as progress:
-            task = progress.add_task("Analyzing with USAi...", total=None)
-            result = _analyze(client, log_text, model, context)
+            task = progress.add_task("Analyzing with AI...", total=None)
+            result, _t_classification, _t_latency_analysis = \
+                _analyze(client, log_text, model, context)
             if ticket:
                 progress.update(task, description="Generating help desk ticket...")
-                ticket_text = _generate_ticket(client, result, metadata, model)
+                ticket_text, _t_latency_ticket = \
+                    _generate_ticket(client, result, metadata or "", model)
+
+    if use_telemetry:
+        _telemetry_write(
+            _install_prefix(),
+            tool_version=__version__,
+            model=model,
+            workflow_detected=_t_workflow,
+            cluster=_t_cluster,
+            partition=_t_partition,
+            failure_type=_t_classification,
+            log_size_chars=_t_log_size,
+            log_truncated=_t_log_truncated,
+            flags={"ticket": ticket, "raw": raw, "context_supplied": bool(context)},
+            context_files_count=_t_ctx_count,
+            latency_analysis_ms=_t_latency_analysis,
+            latency_ticket_ms=_t_latency_ticket,
+            proxy_reachable=_t_proxy_ok,
+            error=_t_error,
+        )
 
     console.print()
     if raw:
@@ -681,18 +799,18 @@ def analyze_cmd(logfile, model, context, tail, raw, ticket, socket_path, host, p
 @click.option("--host", default=_DEFAULT_HOST)
 @click.option("--port", default=_DEFAULT_PORT)
 def list_models_cmd(socket_path, host, port):
-    """List available USAi models."""
+    """List available AI models."""
     with _make_client(socket_path, host, port) as client:
         if not _check_proxy(client):
             raise click.ClickException(
-                "Cannot reach the USAi proxy. Run: analyze-job proxy status"
+                "Cannot reach the hpc-job-analyst proxy. Run: analyze-job proxy status"
             )
         r = client.get("/api/v1/models")
         r.raise_for_status()
         data = r.json()
 
     console.print()
-    console.print("[bold]Available USAi Models[/bold]")
+    console.print("[bold]Available AI Models[/bold]")
     console.print()
     for m in data.get("data", []):
         console.print(f"  [cyan]{m['id']:40s}[/cyan]  {m.get('owned_by','')}")
@@ -704,7 +822,7 @@ def list_models_cmd(socket_path, host, port):
 # ---------------------------------------------------------------------------
 @cli.group("proxy")
 def proxy_group():
-    """Manage the local USAi proxy server."""
+    """Manage the local hpc-job-analyst proxy server."""
     pass
 
 
@@ -781,7 +899,7 @@ def proxy_install(proxy_script, env_file, python_path, host, port, socket_path):
     if not env_file.exists():
         env_file.parent.mkdir(parents=True, exist_ok=True)
         env_file.write_text(
-            "# USAi proxy environment file\n"
+            "# hpc-job-analyst proxy environment file\n"
             "# Set your API key below.  Protect this file: chmod 600\n"
             "USAI_API_KEY=REPLACE_WITH_YOUR_KEY\n"
             f"USAI_BASE_URL=https://api.doc.usai.gov\n"
@@ -831,6 +949,7 @@ def proxy_install(proxy_script, env_file, python_path, host, port, socket_path):
         + (f"socket = {socket_path}\n" if socket_path else "# socket =\n")
         + "# model = claude_4_6_sonnet\n"
         + "# system_context_file = /path/to/extra-context.md\n"
+        + "# telemetry = true\n"
     )
     client_cfg_path.write_text(client_cfg_content)
     console.print(f"[green]Wrote client config:[/green] {client_cfg_path}")
