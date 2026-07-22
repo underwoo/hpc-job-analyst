@@ -50,11 +50,15 @@ def _install_prefix() -> Path:
     here = Path(__file__).resolve()
     # Walk upward looking for a bin/ sibling that contains analyze-job,
     # which is the reliable indicator of the actual prefix.
-    for candidate in [here.parent, here.parent.parent,
-                      here.parent.parent.parent,
-                      here.parent.parent.parent.parent]:
-        if (candidate / "bin" / "analyze-job").exists():
-            return candidate
+    # Depth needed by install layout:
+    #   editable (src layout):  src/analyze_job/cli.py  -> 3 levels up = repo root
+    #   venv non-editable:      lib/pythonX.Y/site-packages/analyze_job/cli.py
+    #                           -> 5 levels up = venv root
+    p = here
+    for _ in range(6):
+        p = p.parent
+        if (p / "bin" / "analyze-job").exists():
+            return p
     # Fallback: two levels above src/analyze_job/
     return here.parent.parent.parent
 
