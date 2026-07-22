@@ -29,6 +29,8 @@ from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
+from analyze_job import __version__
+
 # ---------------------------------------------------------------------------
 # Configuration file resolution
 #
@@ -551,6 +553,7 @@ class _FileFallbackGroup(click.Group):
 
 
 @click.group(cls=_FileFallbackGroup)
+@click.version_option(version=__version__, prog_name="analyze-job")
 def cli():
     """AI-assisted HPC job failure analysis tool.
 

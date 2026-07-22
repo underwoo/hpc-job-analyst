@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-usai-hpc-proxy: A local proxy server that forwards requests to the USAi API.
+hpc-job-analyst proxy: a local proxy server that forwards requests to the AI API.
 
 The API key is stored only in this process's environment (via the systemd
 EnvironmentFile). Users on the system never see the key; they only interact
@@ -13,13 +13,14 @@ Dependencies (all available in miniforge):
 import os
 import sys
 import logging
-import textwrap
 from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+
+from analyze_job import __version__
 
 # ---------------------------------------------------------------------------
 # Configuration (all from environment, set in the systemd EnvironmentFile)
@@ -39,7 +40,7 @@ logging.basicConfig(
     format="%(asctime)s  %(levelname)-8s  %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-log = logging.getLogger("usai-proxy")
+log = logging.getLogger("hpc-job-analyst-proxy")
 
 # ---------------------------------------------------------------------------
 # Startup check
@@ -49,7 +50,8 @@ def _check_config() -> None:
         log.error("USAI_API_KEY is not set. "
                   "Set it in the EnvironmentFile before starting the proxy.")
         sys.exit(1)
-    log.info("USAi proxy starting — upstream: %s", USAI_BASE_URL)
+    log.info("hpc-job-analyst proxy v%s starting — upstream: %s",
+             __version__, USAI_BASE_URL)
     if PROXY_SOCKET:
         log.info("Listening on Unix socket: %s", PROXY_SOCKET)
     else:
@@ -75,9 +77,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="USAi HPC Proxy",
-    description="Local proxy for the USAi API. The API key is never exposed to clients.",
-    version="1.0.0",
+    title="hpc-job-analyst proxy",
+    description="Local proxy for the AI API. The API key is never exposed to clients.",
+    version=__version__,
     lifespan=lifespan,
 )
 
@@ -87,7 +89,7 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "upstream": USAI_BASE_URL}
+    return {"status": "ok", "version": __version__, "upstream": USAI_BASE_URL}
 
 
 # ---------------------------------------------------------------------------
