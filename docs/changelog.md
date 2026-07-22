@@ -6,6 +6,33 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.2.0] — 2025-07-22
+
+### Added
+
+- Usage telemetry (`src/analyze_job/telemetry.py`): each invocation appends
+  a JSONL record to `<install_prefix>/var/telemetry/<hostname>.jsonl`.
+  Records are written atomically (flush + fsync).  Telemetry failures are
+  silently swallowed and never affect the user-facing output.
+- `--no-telemetry` flag on the `analyze` subcommand to opt out of telemetry
+  for a single invocation.
+- `telemetry` option in `client.conf` to disable telemetry system-wide
+  (default: `true`).
+- AI classification tag: the system prompt now instructs the model to append
+  a machine-readable `<!-- CLASSIFICATION: infrastructure|model|success|unknown -->`
+  tag to every analysis response.  The tag is extracted for telemetry and
+  stripped before display so it never appears in user output.
+- Latency timing for both the analysis and ticket API calls; recorded in
+  telemetry as `latency_analysis_ms` and `latency_ticket_ms`.
+
+### Changed
+
+- `_analyze()` now returns `(text, classification, latency_ms)` tuple.
+- `_generate_ticket()` now returns `(text, latency_ms)` tuple.
+- Spinner label changed from "Analyzing with USAi..." to "Analyzing with AI..."
+  to remove vendor-specific language from the visible output.
+- `var/` added to `.gitignore` (telemetry spool directory).
+
 ## [0.1.0] — 2025-07-21
 
 ### Added

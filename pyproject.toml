@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hpc-job-analyst"
-version = "0.1.0"
+version = "0.2.0"
 description = "AI-assisted HPC job failure analysis tool"
 readme = "README.md"
 license = { file = "LICENSE" }
