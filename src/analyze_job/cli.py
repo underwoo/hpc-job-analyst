@@ -749,7 +749,7 @@ def _find_python(hint: str) -> str:
               type=click.Path(path_type=Path),
               help="Path to the environment file containing USAI_API_KEY (will be created if absent).")
 @click.option("--python", "python_path",
-              default="/usw/conda/miniforge/envs/usai-proxy/bin/python",
+              default="/usw/conda/miniforge/envs/hpc-job-analyst/bin/python",
               show_default=True,
               help="Absolute path to the Python interpreter in the conda env.")
 @click.option("--host", default="127.0.0.1", show_default=True,
