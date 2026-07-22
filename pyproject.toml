@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hpc-job-analyst"
+version = "0.1.0"
+description = "AI-assisted HPC job failure analysis tool"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [
+    { name = "Seth Underwood" },
+]
+keywords = ["hpc", "slurm", "job-analysis", "ai", "climate-model"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Atmospheric Science",
+    "Topic :: System :: Monitoring",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.29.0",
+    "httpx>=0.27.0",
+    "click>=8.1.7",
+    "rich>=13.7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/SethUnderwood/hpc-job-analyst"
+Documentation = "https://hpc-job-analyst.readthedocs.io"
+"Bug Tracker" = "https://github.com/SethUnderwood/hpc-job-analyst/issues"
+Changelog = "https://github.com/SethUnderwood/hpc-job-analyst/blob/main/CHANGELOG.md"
+
+[project.scripts]
+analyze-job = "analyze_job.cli:cli"
+
+[tool.setuptools.packages.find]
+where = ["src"]

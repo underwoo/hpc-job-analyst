@@ -1,0 +1,46 @@
+# Python build artefacts
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Editable install marker
+pip-wheel-metadata/
+
+# Virtual environments / conda envs
+.venv/
+venv/
+env/
+
+# Runtime configuration and secrets — NEVER commit these
+etc/
+*.env
+.env
+env.d/
+
+# Editor / OS noise
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# MkDocs build output
+site/
+
+# Jupyter
+.ipynb_checkpoints/

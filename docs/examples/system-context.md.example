@@ -1,0 +1,99 @@
+# hpc-job-analyst — System and Workflow Context
+#
+# This file teaches the AI analysis tool about your HPC system and the
+# scientific workflows your users run.  It is loaded automatically at
+# runtime if placed in one of these locations (all that exist are merged):
+#
+#   <install_prefix>/etc/hpc-job-analyst/system-context.md  — installer/operator
+#   /etc/hpc-job-analyst/system-context.md                  — system-wide admin
+#   ~/.config/hpc-job-analyst/system-context.md             — per-user
+#
+# Write this file in plain Markdown.  Use level-2 (##) headers to separate
+# sections.  Recommended sections are shown below with placeholder text.
+# Delete sections that are not relevant to your site.
+#
+# IMPORTANT: Only describe workflows your users actually run on this system.
+# The AI applies each workflow section only when it detects that workflow in
+# the job log.  It will not cross-apply guidance from one workflow to another.
+
+---
+
+## System: <Your System Name>
+
+<!--
+Describe the HPC system: hardware generation, interconnect type and fabric
+library (e.g., InfiniBand/UCX, Slingshot/OFI), filesystems, Slurm partition
+names, and any common failure signatures visible in job logs.
+
+Example:
+-->
+
+<Your System Name> is a <hardware description> cluster running <OS> with
+Slurm as its workload manager.  Compute partitions include:
+
+- **<partition1>** — <description>
+- **<partition2>** — <description>
+
+The parallel filesystem is <filesystem type> mounted under <path>.
+The MPI library is <MPI library>, and the high-speed interconnect is
+<interconnect> using the <fabric interface> interface.
+
+Common transient infrastructure failure signatures in job logs include:
+- "<example error string 1>"
+- "<example error string 2>"
+
+When these appear, the failure is an infrastructure failure.  The primary
+recommendation is to resubmit the job.
+
+---
+
+## Workflow: <Workflow Name>
+
+<!--
+Add one section per workflow your users run.  For each workflow, describe:
+
+1. What the workflow manages automatically (so the AI does not suggest steps
+   the workflow already handles, such as restart file management).
+2. What the correct user recovery steps are for a transient failure.
+3. Any workflow-specific terminology that appears in job logs.
+
+Example for a segmented climate model workflow:
+-->
+
+<Workflow Name> is recognized in job logs by the presence of <identifier>.
+
+### What the workflow manages automatically
+
+- <Feature 1 the workflow handles internally — do not suggest manual steps for this>
+- <Feature 2>
+
+### Recovery for transient infrastructure failures
+
+For a transient failure (network, node, or filesystem error), the correct
+recovery is:
+
+1. <Step 1>
+2. <Step 2>
+
+Users should NOT manually <action the workflow handles>, as <workflow name>
+manages this automatically.
+
+### Recovery for model/software failures
+
+If the log contains <model error indicators>, the failure is a model error.
+Users should <action>, or contact <support team>.
+
+---
+
+## General guidance
+
+<!--
+Site-wide rules that apply regardless of workflow.  Examples:
+- Quota check commands
+- Node exclusion policy
+- Any site-specific Slurm flags users should or should not use
+-->
+
+- Never suggest that users drain nodes or change node state; those are
+  administrator operations.
+- For quota errors, users can check their usage with <quota command>.

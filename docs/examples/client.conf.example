@@ -1,0 +1,31 @@
+# hpc-job-analyst client configuration
+#
+# Copy this file to one of the locations below and edit as needed.
+# Later locations override earlier ones:
+#
+#   /etc/hpc-job-analyst/client.conf         — system-wide (admin)
+#   <install_prefix>/etc/hpc-job-analyst/client.conf  — operator / conda env
+#   ~/.config/hpc-job-analyst/client.conf    — per-user override
+#
+# The tool works with no config file at all if the proxy is running
+# on the default TCP port (8742) on localhost.
+
+[proxy]
+
+# TCP host and port where the proxy listens.
+# Change host to 127.0.0.1 (default) for Unix-only deployments.
+host = 127.0.0.1
+port = 8742
+
+# Unix domain socket path (optional).
+# When set and the socket file exists, it is preferred over TCP.
+# Leave commented out for TCP-only operation.
+# socket = /run/user/1234/hpc-job-analyst-proxy.sock
+
+# AI model to use for analysis (must be available via the proxy's API endpoint).
+# model = claude_4_6_sonnet
+
+# Path to an additional system-context.md file to load on top of the
+# standard search-path files.  Useful for project- or team-specific context
+# without needing write access to the install prefix or /etc.
+# system_context_file = /path/to/my-project-context.md

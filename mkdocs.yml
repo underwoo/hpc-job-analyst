@@ -1,0 +1,60 @@
+site_name: hpc-job-analyst
+site_description: AI-assisted HPC job failure analysis tool
+site_author: Seth Underwood
+site_url: https://hpc-job-analyst.readthedocs.io
+repo_url: https://github.com/SethUnderwood/hpc-job-analyst
+repo_name: SethUnderwood/hpc-job-analyst
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: blue
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: blue
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - User Guide:
+    - Quick Start: user-guide/quickstart.md
+    - CLI Reference: user-guide/cli-reference.md
+    - Understanding Output: user-guide/output.md
+  - Admin Guide:
+    - Installation: admin-guide/installation.md
+    - Configuration: admin-guide/configuration.md
+    - System Context Files: admin-guide/system-context.md
+    - Production Deployment: admin-guide/production.md
+  - Contributing: contributing.md
+  - Changelog: changelog.md
