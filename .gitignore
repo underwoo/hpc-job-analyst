@@ -44,3 +44,6 @@ site/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Telemetry spool files
+var/
